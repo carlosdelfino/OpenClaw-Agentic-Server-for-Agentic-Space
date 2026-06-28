@@ -25,3 +25,8 @@ Thumbs.db
 
 # Openclaw
 .root/.openclaw/logs/
+
+agent-config.json
+.env.render
+pdf-forge-exports
+.firecrawl
