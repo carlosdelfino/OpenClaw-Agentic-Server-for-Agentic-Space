@@ -1,0 +1,27 @@
+# Variáveis de ambiente com dados sensíveis
+.env
+
+# Logs
+logs/
+*.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# Diretórios de build
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Openclaw
+.root/.openclaw/logs/
