@@ -47,6 +47,7 @@ fi
 AGENT_NAME="$(strip_outer_quotes "${AGENT_NAME:-agente-capacita-psc-tutor}")"
 AGENT_DISPLAY_NAME="$(strip_outer_quotes "${AGENT_DISPLAY_NAME:-Agente Capacita PSC - Tutor}")"
 AGENT_SKILL_FILE="$(strip_outer_quotes "${AGENT_SKILL_FILE:-https://agenticspace.vercel.app/agents/SKILL.md}")"
+AGENTIC_SPACE_API_KEY="$(strip_outer_quotes "${AGENTIC_SPACE_API_KEY:-}")"
 
 MODEL_PROVIDER="$(strip_outer_quotes "${MODEL_PROVIDER:-nvidia}")"
 MODEL_ID="$(strip_outer_quotes "${MODEL_ID:-nemotron-3-super-120b-a12b}")"
@@ -217,32 +218,35 @@ cloud tutor
 EOF
 
 # -----------------------------------------------------------------------------
-# Criar/copiar credenciais do Agentic Space
+# Criar credenciais do Agentic Space
 # -----------------------------------------------------------------------------
 
 echo "🔧 Configurando credenciais Agentic Space..."
 
-if [ -f "$WORKSPACE/.agenticspace/credentials.json" ]; then
-  echo "✅ Credenciais Agentic Space já existem no workspace."
-elif [ -f /run/secrets/agent_config ]; then
-  echo "📄 Usando credenciais Agentic Space recebidas via BuildKit secret."
-  cp /run/secrets/agent_config "$WORKSPACE/.agenticspace/credentials.json"
-elif [ -n "${AGENTICSPACE_API_KEY:-}" ]; then
-  echo "📄 Criando credenciais Agentic Space a partir de variáveis de ambiente."
+if [ -n "$AGENTIC_SPACE_API_KEY" ]; then
+  echo "📄 Criando credenciais Agentic Space a partir de AGENTIC_SPACE_API_KEY."
   node -e '
 const fs = require("fs");
+const [file, apiKey, agentName, agentId] = process.argv.slice(1);
 const data = {
-  api_key: process.env.AGENTICSPACE_API_KEY,
-  agent_name: process.env.AGENTICSPACE_AGENT_NAME || process.env.AGENT_DISPLAY_NAME || process.env.AGENT_NAME,
-  agent_id: process.env.AGENTICSPACE_AGENT_ID || process.env.AGENT_NAME
+  api_key: apiKey,
+  agent_name: agentName,
+  agent_id: agentId
 };
-fs.writeFileSync(process.argv[1], JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-' "$WORKSPACE/.agenticspace/credentials.json"
+fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+' "$WORKSPACE/.agenticspace/credentials.json" "$AGENTIC_SPACE_API_KEY" "$AGENT_DISPLAY_NAME" "$AGENT_NAME"
 else
-  echo "⚠️  Credenciais Agentic Space não informadas; criando credentials.json vazio."
-  cat > "$WORKSPACE/.agenticspace/credentials.json" << 'JSON'
-{}
-JSON
+  echo "⚠️  AGENTIC_SPACE_API_KEY não definida; criando credentials.json sem api_key."
+  node -e '
+const fs = require("fs");
+const [file, agentName, agentId] = process.argv.slice(1);
+const data = {
+  api_key: "",
+  agent_name: agentName,
+  agent_id: agentId
+};
+fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
+' "$WORKSPACE/.agenticspace/credentials.json" "$AGENT_DISPLAY_NAME" "$AGENT_NAME"
 fi
 
 chmod 600 "$WORKSPACE/.agenticspace/credentials.json"

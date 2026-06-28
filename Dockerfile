@@ -43,10 +43,8 @@ RUN chmod +x /app/setup-agent.sh
 # Segredos devem ser passados por BuildKit, sem COPY para dentro da imagem:
 #   docker build \
 #     --secret id=app_env,src=.env \
-#     --secret id=agent_config,src=agent-config.json \
 #     -t agente-capacita-psc-tutor:1.0 .
 RUN --mount=type=secret,id=app_env,required=false \
-    --mount=type=secret,id=agent_config,required=false \
     /app/setup-agent.sh
 
 # Expõe a porta padrão do Openclaw Gateway (8789)
