@@ -50,10 +50,18 @@ AGENT_SKILL_FILE="$(strip_outer_quotes "${AGENT_SKILL_FILE:-https://agenticspace
 AGENTIC_SPACE_API_KEY="$(strip_outer_quotes "${AGENTIC_SPACE_API_KEY:-}")"
 
 MODEL_PROVIDER="$(strip_outer_quotes "${MODEL_PROVIDER:-nvidia}")"
-MODEL_ID="$(strip_outer_quotes "${MODEL_ID:-nemotron-3-super-120b-a12b}")"
+MODEL_ID="$(strip_outer_quotes "${MODEL_ID:-nvidia/nemotron-3-super-120b-a12b}")"
+MODEL_API_TOKEN="$(strip_outer_quotes "${MODEL_API_TOKEN:-}")"
+MODEL_BASE_URL="$(strip_outer_quotes "${MODEL_BASE_URL:-https://integrate.api.nvidia.com/v1}")"
+MODEL_API="$(strip_outer_quotes "${MODEL_API:-openai-completions}")"
 
-# OpenClaw recomenda referência de modelo no formato provider/model
-MODEL_REF="$(strip_outer_quotes "${MODEL_REF:-${MODEL_PROVIDER}/${MODEL_ID}}")"
+if [ -n "${MODEL_REF:-}" ]; then
+  MODEL_REF="$(strip_outer_quotes "$MODEL_REF")"
+elif [[ "$MODEL_ID" == */* ]]; then
+  MODEL_REF="$MODEL_ID"
+else
+  MODEL_REF="${MODEL_PROVIDER}/${MODEL_ID}"
+fi
 
 MODEL_PROFILE_ID="$(strip_outer_quotes "${MODEL_PROFILE_ID:-${MODEL_PROVIDER}:manual}")"
 
@@ -62,6 +70,7 @@ WORKSPACE="$(strip_outer_quotes "${WORKSPACE:-${OPENCLAW_HOME}/workspace-${AGENT
 echo "🔧 Agente: ${AGENT_NAME}"
 echo "📂 Workspace: ${WORKSPACE}"
 echo "🤖 Modelo: ${MODEL_REF}"
+echo "🔌 Provider do modelo: ${MODEL_PROVIDER}"
 echo "🌐 Skill remoto: ${AGENT_SKILL_FILE}"
 
 mkdir -p "$WORKSPACE"
@@ -90,6 +99,117 @@ fi
 
 # Sintaxe: openclaw config set <path> <value>
 openclaw config set gateway.mode local || true
+
+# Registrar provider e modelos antes de criar/usar o agente.
+if [ "$MODEL_PROVIDER" = "nvidia" ]; then
+  echo "🔧 Registrando provider NVIDIA no catálogo de modelos..."
+
+  NVIDIA_PROVIDER_CONFIG="$(node -e '
+const [baseUrl, api] = process.argv.slice(1);
+const provider = {
+  baseUrl,
+  api,
+  models: [
+    {
+      id: "nvidia/nemotron-3-ultra-550b-a55b",
+      name: "NVIDIA Nemotron 3 Ultra 550B A55B",
+      reasoning: true,
+      input: ["text"],
+      cost: {
+        input: 0.5,
+        output: 2.2,
+        cacheRead: 0.1,
+        cacheWrite: 0
+      },
+      contextWindow: 1000000,
+      maxTokens: 16384,
+      compat: {
+        requiresStringContent: true
+      }
+    },
+    {
+      id: "meta-llama/llama-3.3-70b-instruct",
+      name: "Meta Llama 3.3 70B Instruct",
+      reasoning: false,
+      input: ["text"],
+      cost: {
+        input: 0.1,
+        output: 0.32,
+        cacheRead: 0.05,
+        cacheWrite: 0.5
+      },
+      contextWindow: 262144,
+      maxTokens: 8192,
+      compat: {
+        requiresStringContent: true
+      }
+    },
+    {
+      id: "meta-llama/llama-3.3-70b-instruct:free",
+      name: "Meta Llama 3.3 70B Instruct (Free)",
+      reasoning: false,
+      input: ["text"],
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0
+      },
+      contextWindow: 1000000,
+      maxTokens: 16384,
+      compat: {
+        requiresStringContent: true
+      }
+    },
+    {
+      id: "nvidia/nemotron-3-super-120b-a12b",
+      name: "NVIDIA Nemotron 3 Super 120B",
+      reasoning: false,
+      input: ["text"],
+      cost: {
+        input: 0.09,
+        output: 0.45,
+        cacheRead: 0,
+        cacheWrite: 0
+      },
+      contextWindow: 262144,
+      maxTokens: 8192,
+      compat: {
+        requiresStringContent: true
+      }
+    }
+  ]
+};
+console.log(JSON.stringify(provider));
+' "$MODEL_BASE_URL" "$MODEL_API")"
+
+  openclaw config set "models.providers.${MODEL_PROVIDER}" \
+    "$NVIDIA_PROVIDER_CONFIG" \
+    --strict-json \
+    --merge || true
+
+  OPENCLAW_CONFIG_FILE="${OPENCLAW_CONFIG_FILE:-${OPENCLAW_HOME}/openclaw.json}"
+  node -e '
+const fs = require("fs");
+const [file, providerName, providerJson] = process.argv.slice(1);
+const provider = JSON.parse(providerJson);
+let config = {};
+if (fs.existsSync(file)) {
+  const raw = fs.readFileSync(file, "utf8").trim();
+  if (raw) {
+    config = JSON.parse(raw);
+  }
+}
+config.models = config.models || {};
+config.models.mode = config.models.mode || "merge";
+config.models.providers = config.models.providers || {};
+config.models.providers[providerName] = {
+  ...(config.models.providers[providerName] || {}),
+  ...provider
+};
+fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+' "$OPENCLAW_CONFIG_FILE" "$MODEL_PROVIDER" "$NVIDIA_PROVIDER_CONFIG"
+fi
 
 # Configurar modelo padrão dos agentes
 openclaw config set agents.defaults.model.primary "$MODEL_REF" || true
@@ -123,7 +243,7 @@ fi
 # Configurar API key do modelo
 # -----------------------------------------------------------------------------
 
-if [ -n "${MODEL_API_TOKEN:-}" ]; then
+if [ -n "$MODEL_API_TOKEN" ]; then
   echo "🔑 Configurando API key para provider '${MODEL_PROVIDER}'..."
 
   printf "%s\n" "$MODEL_API_TOKEN" | openclaw models auth --agent "$AGENT_NAME" paste-api-key \

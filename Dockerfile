@@ -15,8 +15,10 @@ ARG AGENT_NAME=agente-capacita-psc-tutor
 ARG AGENT_DISPLAY_NAME="Agente Capacita PSC - Tutor"
 ARG AGENT_SKILL_FILE=https://agenticspace.vercel.app/agents/SKILL.md
 ARG MODEL_PROVIDER=nvidia
-ARG MODEL_ID=nemotron-3-super-120b-a12b
+ARG MODEL_ID=nvidia/nemotron-3-super-120b-a12b
 ARG MODEL_PROFILE_ID=nvidia:default
+ARG MODEL_BASE_URL=https://integrate.api.nvidia.com/v1
+ARG MODEL_API=openai-completions
 
 ENV OPENCLAW_HOME=/root/.openclaw \
     AGENT_NAME=${AGENT_NAME} \
@@ -24,7 +26,9 @@ ENV OPENCLAW_HOME=/root/.openclaw \
     AGENT_SKILL_FILE=${AGENT_SKILL_FILE} \
     MODEL_PROVIDER=${MODEL_PROVIDER} \
     MODEL_ID=${MODEL_ID} \
-    MODEL_PROFILE_ID=${MODEL_PROFILE_ID}
+    MODEL_PROFILE_ID=${MODEL_PROFILE_ID} \
+    MODEL_BASE_URL=${MODEL_BASE_URL} \
+    MODEL_API=${MODEL_API}
 
 # Instala dependências necessárias
 RUN apk add --no-cache curl git bash
