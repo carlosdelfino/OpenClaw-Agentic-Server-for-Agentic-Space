@@ -22,6 +22,17 @@ strip_outer_quotes() {
   printf '%s' "$value"
 }
 
+first_non_empty() {
+  local value
+  for value in "$@"; do
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  done
+  return 0
+}
+
 # Carregar variáveis de ambiente sem copiar .env para dentro da imagem.
 ENV_LOADED=false
 for ENV_FILE in /run/secrets/app_env /app/.env; do
@@ -47,31 +58,54 @@ fi
 AGENT_NAME="$(strip_outer_quotes "${AGENT_NAME:-agente-capacita-psc-tutor}")"
 AGENT_DISPLAY_NAME="$(strip_outer_quotes "${AGENT_DISPLAY_NAME:-Agente Capacita PSC - Tutor}")"
 AGENT_SKILL_FILE="$(strip_outer_quotes "${AGENT_SKILL_FILE:-https://agenticspace.vercel.app/agents/SKILL.md}")"
-AGENTIC_SPACE_API_KEY="$(strip_outer_quotes "${AGENTIC_SPACE_API_KEY:-}")"
+AGENTIC_SPACE_API_KEY="$(strip_outer_quotes "$(first_non_empty "${AGENTIC_SPACE_API_KEY:-}" "${AGENTICSPACE_API_KEY:-}")")"
 
 MODEL_PROVIDER="$(strip_outer_quotes "${MODEL_PROVIDER:-nvidia}")"
 MODEL_ID="$(strip_outer_quotes "${MODEL_ID:-nvidia/nemotron-3-super-120b-a12b}")"
-MODEL_API_TOKEN="$(strip_outer_quotes "${MODEL_API_TOKEN:-}")"
+MODEL_API_TOKEN="$(strip_outer_quotes "$(first_non_empty "${MODEL_API_TOKEN:-}" "${NVIDIA_API_KEY:-}" "${NVIDIA_API_TOKEN:-}")")"
 MODEL_BASE_URL="$(strip_outer_quotes "${MODEL_BASE_URL:-https://integrate.api.nvidia.com/v1}")"
 MODEL_API="$(strip_outer_quotes "${MODEL_API:-openai-completions}")"
 
 if [ -n "${MODEL_REF:-}" ]; then
   MODEL_REF="$(strip_outer_quotes "$MODEL_REF")"
-elif [[ "$MODEL_ID" == */* ]]; then
-  MODEL_REF="$MODEL_ID"
 else
   MODEL_REF="${MODEL_PROVIDER}/${MODEL_ID}"
 fi
 
+while [[ "$MODEL_REF" == "${MODEL_PROVIDER}/${MODEL_PROVIDER}/${MODEL_PROVIDER}/"* ]]; do
+  MODEL_REF="${MODEL_REF#${MODEL_PROVIDER}/}"
+done
+
 MODEL_PROFILE_ID="$(strip_outer_quotes "${MODEL_PROFILE_ID:-${MODEL_PROVIDER}:manual}")"
 
 WORKSPACE="$(strip_outer_quotes "${WORKSPACE:-${OPENCLAW_HOME}/workspace-${AGENT_NAME}}")"
+
+REQUIRED_ENV_MISSING=false
+if [ -z "$AGENTIC_SPACE_API_KEY" ]; then
+  echo "❌ AGENTIC_SPACE_API_KEY não definida. Configure esta variável no Railway."
+  REQUIRED_ENV_MISSING=true
+fi
+
+if [ -z "$MODEL_API_TOKEN" ]; then
+  echo "❌ MODEL_API_TOKEN não definida. Configure MODEL_API_TOKEN ou NVIDIA_API_KEY no Railway."
+  REQUIRED_ENV_MISSING=true
+fi
+
+if [ "$REQUIRED_ENV_MISSING" = true ]; then
+  exit 1
+fi
+
+if [ "$MODEL_PROVIDER" = "nvidia" ]; then
+  export NVIDIA_API_KEY="$MODEL_API_TOKEN"
+fi
 
 echo "🔧 Agente: ${AGENT_NAME}"
 echo "📂 Workspace: ${WORKSPACE}"
 echo "🤖 Modelo: ${MODEL_REF}"
 echo "🔌 Provider do modelo: ${MODEL_PROVIDER}"
 echo "🌐 Skill remoto: ${AGENT_SKILL_FILE}"
+echo "🔑 Agentic Space API key: definida"
+echo "🔑 Provider API key: definida"
 
 mkdir -p "$WORKSPACE"
 mkdir -p "$WORKSPACE/.agenticspace"
@@ -108,10 +142,11 @@ if [ "$MODEL_PROVIDER" = "nvidia" ]; then
 const [baseUrl, api] = process.argv.slice(1);
 const provider = {
   baseUrl,
+  apiKey: "${NVIDIA_API_KEY}",
   api,
   models: [
     {
-      id: "nvidia/nemotron-3-ultra-550b-a55b",
+      id: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
       name: "NVIDIA Nemotron 3 Ultra 550B A55B",
       reasoning: true,
       input: ["text"],
@@ -128,7 +163,7 @@ const provider = {
       }
     },
     {
-      id: "meta-llama/llama-3.3-70b-instruct",
+      id: "nvidia/meta-llama/llama-3.3-70b-instruct",
       name: "Meta Llama 3.3 70B Instruct",
       reasoning: false,
       input: ["text"],
@@ -145,7 +180,7 @@ const provider = {
       }
     },
     {
-      id: "meta-llama/llama-3.3-70b-instruct:free",
+      id: "nvidia/meta-llama/llama-3.3-70b-instruct:free",
       name: "Meta Llama 3.3 70B Instruct (Free)",
       reasoning: false,
       input: ["text"],
@@ -162,8 +197,25 @@ const provider = {
       }
     },
     {
-      id: "nvidia/nemotron-3-super-120b-a12b",
+      id: "nvidia/nvidia/nemotron-3-super-120b-a12b",
       name: "NVIDIA Nemotron 3 Super 120B",
+      reasoning: false,
+      input: ["text"],
+      cost: {
+        input: 0.09,
+        output: 0.45,
+        cacheRead: 0,
+        cacheWrite: 0
+      },
+      contextWindow: 262144,
+      maxTokens: 8192,
+      compat: {
+        requiresStringContent: true
+      }
+    },
+    {
+      id: "nvidia/nemotron-3-super-120b-a12b",
+      name: "NVIDIA Nemotron 3 Super 120B (Legacy ID)",
       reasoning: false,
       input: ["text"],
       cost: {
@@ -243,18 +295,14 @@ fi
 # Configurar API key do modelo
 # -----------------------------------------------------------------------------
 
-if [ -n "$MODEL_API_TOKEN" ]; then
-  echo "🔑 Configurando API key para provider '${MODEL_PROVIDER}'..."
+echo "🔑 Configurando API key para provider '${MODEL_PROVIDER}'..."
 
-  printf "%s\n" "$MODEL_API_TOKEN" | openclaw models auth --agent "$AGENT_NAME" paste-api-key \
-    --provider "$MODEL_PROVIDER" \
-    --profile-id "$MODEL_PROFILE_ID" || {
-      echo "❌ Erro ao configurar API key para ${MODEL_PROVIDER}."
-      exit 1
-    }
-else
-  echo "⚠️  MODEL_API_TOKEN não definida; pulando configuração de API key."
-fi
+printf "%s\n" "$MODEL_API_TOKEN" | openclaw models auth --agent "$AGENT_NAME" paste-api-key \
+  --provider "$MODEL_PROVIDER" \
+  --profile-id "$MODEL_PROFILE_ID" || {
+    echo "❌ Erro ao configurar API key para ${MODEL_PROVIDER}."
+    exit 1
+  }
 
 # -----------------------------------------------------------------------------
 # Criar arquivos de definição do agente
@@ -343,9 +391,8 @@ EOF
 
 echo "🔧 Configurando credenciais Agentic Space..."
 
-if [ -n "$AGENTIC_SPACE_API_KEY" ]; then
-  echo "📄 Criando credenciais Agentic Space a partir de AGENTIC_SPACE_API_KEY."
-  node -e '
+echo "📄 Criando credenciais Agentic Space a partir de AGENTIC_SPACE_API_KEY."
+node -e '
 const fs = require("fs");
 const [file, apiKey, agentName, agentId] = process.argv.slice(1);
 const data = {
@@ -355,19 +402,6 @@ const data = {
 };
 fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
 ' "$WORKSPACE/.agenticspace/credentials.json" "$AGENTIC_SPACE_API_KEY" "$AGENT_DISPLAY_NAME" "$AGENT_NAME"
-else
-  echo "⚠️  AGENTIC_SPACE_API_KEY não definida; criando credentials.json sem api_key."
-  node -e '
-const fs = require("fs");
-const [file, agentName, agentId] = process.argv.slice(1);
-const data = {
-  api_key: "",
-  agent_name: agentName,
-  agent_id: agentId
-};
-fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", { mode: 0o600 });
-' "$WORKSPACE/.agenticspace/credentials.json" "$AGENT_DISPLAY_NAME" "$AGENT_NAME"
-fi
 
 chmod 600 "$WORKSPACE/.agenticspace/credentials.json"
 
