@@ -43,17 +43,12 @@ RUN mkdir -p /root/.openclaw
 COPY setup-agent.sh /app/setup-agent.sh
 RUN chmod +x /app/setup-agent.sh
 
-# Executa o setup durante o build.
-# Segredos devem ser passados por BuildKit, sem COPY para dentro da imagem:
-#   docker build \
-#     --secret id=app_env,src=.env \
-#     -t agente-capacita-psc-tutor:1.0 .
-RUN --mount=type=secret,id=app_env,required=false \
-    /app/setup-agent.sh
+# O setup roda no startup para usar as variáveis configuradas no Railway
+# sem depender de BuildKit secrets nem gravar segredos durante o build.
 
 # Expõe a porta padrão do Openclaw Gateway (8789)
 EXPOSE 8789
 
-# Comando para iniciar o Openclaw Gateway em foreground
+# Comando para configurar o agente e iniciar o Openclaw Gateway em foreground
 # A senha pode ser configurada via variável de ambiente GATEWAY_PASSWORD
-CMD ["sh", "-c", "export OPENCLAW_GATEWAY_PASSWORD=\"${OPENCLAW_GATEWAY_PASSWORD:-${GATEWAY_PASSWORD:-1234senha}}\"; exec openclaw gateway --port 8789 --bind lan --auth password --allow-unconfigured"]
+CMD ["sh", "-c", "/app/setup-agent.sh && export OPENCLAW_GATEWAY_PASSWORD=\"${OPENCLAW_GATEWAY_PASSWORD:-${GATEWAY_PASSWORD:-1234senha}}\" && exec openclaw gateway --port ${PORT:-8789} --bind lan --auth password --allow-unconfigured"]
